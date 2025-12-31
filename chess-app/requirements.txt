@@ -1,9 +1,0 @@
-Django==4.2.25
-python-chess==1.999
-# project-3
-channels==4.0.0
-daphne==4.1.2
-# project-4
-djangorestframework==3.14.0
-django-cors-headers==4.3.1
-whitenoise==6.6.0
