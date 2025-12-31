@@ -1,0 +1,74 @@
+Project 3 - Django Chess App Upgrade Report
+==========================================
+
+Scope
+-----
+- Replace all AJAX polling with Django Channels websockets while preserving existing multiplayer features.
+- Fix prior issues: missing history entries, manual refresh requirement for moves, and disruptive auto-refresh behavior.
+- Ensure deployment artifacts (requirements, start scripts) reflect the realtime infrastructure.
+
+Key Changes
+-----------
+1. Backend configuration
+   - Added `channels` and `daphne` dependencies and enabled Channels in `INSTALLED_APPS`.
+   - Configured `ASGI_APPLICATION` and in-memory channel layer.
+   - Rebuilt `chess_project/asgi.py` using Channels’ routing template, added static-file handling for development, and deferred routing import until after Django loads.
+2. Realtime communication
+   - Implemented `LobbyConsumer` and `GameConsumer` websocket consumers with membership checks.
+   - Added broadcast helpers in `chess_game/views.py` to notify lobby/game groups on login, challenges, moves, and resignations.
+   - Removed all AJAX endpoints and related URLs.
+3. Frontend updates
+   - Replaced `ajax_polling.js` with websocket client code in `new_game.html` and `game.html`, including auto-reconnect logic.
+   - Cleaned up templates to reference the new scripts only.
+4. Data visibility
+   - Updated history queries to include resigned games so records are complete.
+5. Documentation & structure
+   - Noted Channels changes in `CHANGES_MADE.md`.
+   - Collected project Markdown files under `docs/`.
+
+Challenges Encountered
+----------------------
+1. Websocket 404s / Broken pipes  
+   - Cause: initial ASGI routing import happened before Django settings loaded, and the development server was still running WSGI `runserver`.  
+   - Fixes: deferred routing import until after `get_asgi_application()` and ran the project via Channels-enabled `runserver` / Daphne.
+
+2. Websocket handshake failures in browser  
+   - Cause: earlier attempts still passed through WSGI; once Daphne ran, missing static handling produced errors.  
+   - Fixes: Added `ASGIStaticFilesHandler` wrapping in debug mode and restarted the ASGI server; ensured consistent host usage (`localhost` vs `127.0.0.1`).
+
+3. Opponent move visibility and history gaps  
+   - Cause: polling removal required new broadcast hooks; history excluded resigned games by default.  
+   - Fixes: broadcast helpers trigger reloads on all critical events; history queries now include `status__in ['completed','resigned']`.
+
+4. Port conflicts and stale processes  
+   - Cause: previous `runserver` instances still bound to port 8000, blocking Daphne.  
+   - Fixes: used `lsof` to locate and kill the old process before relaunching Daphne.
+
+Testing & Verification
+----------------------
+- `python3 manage.py check` after each major change.
+- Manual multi-browser verification: lobby availability updates, move propagation, resignation updates, and history listings.
+- Confirmed Daphne serves static files and websocket upgrades succeed (`101 Switching Protocols`).
+
+Deployment Notes
+----------------
+- Container image must reinstall dependencies to include Channels/Daphne.
+- Existing `start_server.sh` still uses `python3 manage.py runserver`; acceptable for Channels-enabled dev server, but production containers should prefer Daphne or another ASGI server.
+
+Tools, Technologies, and Services
+---------------------------------
+- Backend Framework: Django 4.2 (authentication, ORM, templates, built-in admin).
+- Real-time Stack: Django Channels 4.x, Daphne ASGI server, Python `channels` and `asgiref` libraries enabling WebSockets.
+- Chess Logic: `python-chess` library for move validation, board state, and game conclusion detection.
+- Frontend Stack: Django templates with Bootstrap 5, Font Awesome, custom CSS (`chessboard.css`), and vanilla JavaScript for websocket clients.
+- Session & Auth: Django’s session middleware and authentication system.
+- Development Tooling: SQLite database, `manage.py` utilities, `start_server.sh` convenience script, `requirements.txt` for dependency management.
+- WebSocket Client: Browser `WebSocket` API with custom reconnect logic to receive lobby/game updates.
+- Deployment: Dockerfile (Python base image) and `docker-compose.yml` to build/run containers; Daphne recommended for serving ASGI app in containers.
+- Version Tracking: `CHANGES_MADE.md` and `docs/project3_report.txt` documenting modifications and progress.
+
+Outstanding Considerations
+--------------------------
+- Potential future work: production-ready channel layer (Redis) and persistent websocket infrastructure.
+- Optional cleanup: update Docker entrypoint to run Daphne consistently.
+
